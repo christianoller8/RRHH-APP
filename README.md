@@ -51,6 +51,8 @@ Controller  →  Service  →  Repository  →  Base de datos
 | **Archivos planos dentro de cada feature** | Con ~5 archivos por feature, subcarpetas serían ruido. El nombre de la clase ya indica su rol. | Si una feature crece mucho, habrá que subdividirla. |
 | **`common/` para lo compartido** | Lo que usan todas las features (excepciones globales) no pertenece a ninguna. | Riesgo de que `common` se convierta en cajón de sastre: solo entra lo realmente transversal. |
 | **Layout como componente de ruta** (`core/layout/main-layout`) | Las pantallas de la app cuelgan como rutas hijas del layout; el login queda fuera y no muestra toolbar ni sidenav. | Hay que entender las rutas anidadas y los `router-outlet` múltiples. |
+| **Nombres de archivo según el estilo 2025**, con `.service` conservado en los servicios | Es la guía oficial vigente. Conservar `.service` evita que el servicio `Empleado` choque con el modelo `Empleado`. | Los tutoriales antiguos usan `.component.ts`; hay que traducir los nombres. |
+| **Frontend sin `zone.js` (`--zoneless`) y con SCSS** | Angular repinta según los `signal()`. SCSS es imprescindible para el tema de Material 3. | Alguna librería de terceros puede asumir `zone.js`. *(pendiente de verificar con Material)* |
 | **Angular Material 3 en el frontend** | Componentes accesibles y un sistema de temas basado en variables CSS. | Aprender su sistema de theming además de Angular. *(pendiente de configurar)* |
 | **Proyecto de aprendizaje** | Cada pieza de código se explica (qué es y por qué) antes de escribirla. | Más lento, pero es el objetivo. |
 
@@ -147,16 +149,17 @@ frontend/
 └── src/
     ├── main.ts
     ├── index.html
-    ├── styles.css
+    ├── styles.scss
     └── app/
-        ├── app.component.ts
+        ├── app.ts                           ← componente raíz (clase App)
+        ├── app.html
         ├── app.config.ts
         ├── app.routes.ts
         ├── core/                            ← global, se usa una vez
         │   ├── layout/main-layout/          ← toolbar + sidenav de Material
         │   ├── services/auth.service.ts
-        │   ├── guards/auth.guard.ts
-        │   └── interceptors/jwt.interceptor.ts
+        │   ├── guards/auth-guard.ts
+        │   └── interceptors/jwt-interceptor.ts
         ├── shared/                          ← reutilizable en varias features
         │   └── models/
         │       ├── empleado.model.ts
@@ -299,15 +302,24 @@ cd -
 Desde la raíz `rrhh-app/`:
 
 ```bash
-ng new frontend --routing --style=css --ssr=false
+ng new frontend --routing --style=scss --ssr=false --skip-git --zoneless --ai-config=none --file-name-style-guide=2025
 cd frontend
 ```
+
+| Opción | Por qué |
+|---|---|
+| `--style=scss` | Angular Material 3 define su tema con Sass (`@use '@angular/material' as mat`). Con `css` no podrías usarlo. |
+| `--skip-git` | Sin esto, `ng new` ejecuta `git init` dentro de `frontend/` y creas un repositorio dentro de otro. |
+| `--zoneless` | La app no usa `zone.js` (la librería que vigila el navegador para saber cuándo repintar). Angular repinta según los `signal()`, que es lo que usan los ejemplos. |
+| `--ai-config=none` | No genera archivos de configuración para asistentes de IA. |
+| `--file-name-style-guide=2025` | Estilo vigente: `empleado-list.ts` y clase `EmpleadoList`, sin el sufijo `.component`. |
+| `--ssr=false` | Sin renderizado en servidor. |
 
 ### 5.2 Crear la estructura con Angular CLI
 
 ```bash
 # Core
-ng generate service core/services/auth
+ng generate service core/services/auth --type=service
 ng generate guard core/guards/auth --functional
 ng generate interceptor core/interceptors/jwt --functional
 ng generate component core/layout/main-layout
@@ -318,16 +330,26 @@ ng generate component features/dashboard
 ng generate component features/empleados/empleado-list
 ng generate component features/empleados/empleado-form
 ng generate component features/empleados/empleado-detail
-ng generate service features/empleados/empleado
+ng generate service features/empleados/empleado --type=service
 ng generate component features/departamentos/departamento-list
-ng generate service features/departamentos/departamento
+ng generate service features/departamentos/departamento --type=service
 ng generate component features/vacaciones/solicitar-vacaciones
 ng generate component features/vacaciones/mis-solicitudes
 ng generate component features/vacaciones/aprobar-solicitudes
-ng generate service features/vacaciones/vacaciones
+ng generate service features/vacaciones/vacaciones --type=service
 ```
 
-> A partir de Angular 20, la CLI genera los ficheros sin el sufijo `.component` (por ejemplo `empleado-list.ts` en vez de `empleado-list.component.ts`). Funciona igual; adapta los nombres de los imports a lo que te genere.
+Cómo se nombra cada cosa con el estilo 2025 (comprobado con `ng generate --dry-run` en Angular CLI 22):
+
+| Tipo | Archivo | Clase |
+|---|---|---|
+| Componente | `empleado-list.ts` | `EmpleadoList` |
+| Servicio | `empleado.service.ts` | `EmpleadoService` |
+| Guard | `auth-guard.ts` | lo que genere el CLI |
+| Interceptor | `jwt-interceptor.ts` | lo que genere el CLI |
+| Modelo (interfaz) | `empleado.model.ts` | `Empleado` |
+
+> Por defecto, el estilo 2025 también quita el sufijo a los servicios (`empleado.ts`, clase `Empleado`), lo que chocaría con el modelo `Empleado`. Por eso los servicios se generan con `--type=service`, que conserva `.service`.
 
 Crea a mano la carpeta de modelos:
 
@@ -766,7 +788,7 @@ export class EmpleadoService {
 }
 ```
 
-#### `features/empleados/empleado-list/empleado-list.component.ts`
+#### `features/empleados/empleado-list/empleado-list.ts`
 
 ```typescript
 import { Component, OnInit, inject, signal } from '@angular/core';
@@ -777,12 +799,11 @@ import { Empleado } from '../../../shared/models/empleado.model';
 
 @Component({
   selector: 'app-empleado-list',
-  standalone: true,
   imports: [RouterLink, DatePipe],
-  templateUrl: './empleado-list.component.html',
-  styleUrl: './empleado-list.component.css'
+  templateUrl: './empleado-list.html',
+  styleUrl: './empleado-list.scss'
 })
-export class EmpleadoListComponent implements OnInit {
+export class EmpleadoList implements OnInit {
   private empleadoService = inject(EmpleadoService);
 
   empleados = signal<Empleado[]>([]);
@@ -814,7 +835,7 @@ export class EmpleadoListComponent implements OnInit {
 }
 ```
 
-#### `features/empleados/empleado-list/empleado-list.component.html`
+#### `features/empleados/empleado-list/empleado-list.html`
 
 ```html
 <div class="cabecera">
@@ -859,9 +880,9 @@ export class EmpleadoListComponent implements OnInit {
 }
 ```
 
-#### `features/empleados/empleado-list/empleado-list.component.css`
+#### `features/empleados/empleado-list/empleado-list.scss`
 
-```css
+```scss
 .cabecera { display: flex; justify-content: space-between; align-items: center; }
 table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
 th, td { padding: 0.6rem; border-bottom: 1px solid #ddd; text-align: left; }
@@ -871,7 +892,7 @@ th { background: #f4f4f4; }
 td button { margin-left: 0.5rem; }
 ```
 
-#### `features/empleados/empleado-form/empleado-form.component.ts`
+#### `features/empleados/empleado-form/empleado-form.ts`
 
 ```typescript
 import { Component, OnInit, inject } from '@angular/core';
@@ -882,11 +903,10 @@ import { Empleado } from '../../../shared/models/empleado.model';
 
 @Component({
   selector: 'app-empleado-form',
-  standalone: true,
   imports: [ReactiveFormsModule, RouterLink],
-  templateUrl: './empleado-form.component.html'
+  templateUrl: './empleado-form.html'
 })
-export class EmpleadoFormComponent implements OnInit {
+export class EmpleadoForm implements OnInit {
   private fb = inject(FormBuilder);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -925,7 +945,7 @@ export class EmpleadoFormComponent implements OnInit {
 }
 ```
 
-#### `features/empleados/empleado-form/empleado-form.component.html`
+#### `features/empleados/empleado-form/empleado-form.html`
 
 ```html
 <h1>{{ id ? 'Editar empleado' : 'Nuevo empleado' }}</h1>
@@ -955,13 +975,13 @@ export class EmpleadoFormComponent implements OnInit {
 
 ```typescript
 import { Routes } from '@angular/router';
-import { EmpleadoListComponent } from './empleado-list/empleado-list.component';
-import { EmpleadoFormComponent } from './empleado-form/empleado-form.component';
+import { EmpleadoList } from './empleado-list/empleado-list';
+import { EmpleadoForm } from './empleado-form/empleado-form';
 
 export const EMPLEADOS_ROUTES: Routes = [
-  { path: '', component: EmpleadoListComponent },
-  { path: 'nuevo', component: EmpleadoFormComponent },
-  { path: ':id/editar', component: EmpleadoFormComponent }
+  { path: '', component: EmpleadoList },
+  { path: 'nuevo', component: EmpleadoForm },
+  { path: ':id/editar', component: EmpleadoForm }
 ];
 ```
 
@@ -969,12 +989,12 @@ export const EMPLEADOS_ROUTES: Routes = [
 
 ```typescript
 import { Routes } from '@angular/router';
-import { MainLayoutComponent } from './core/layout/main-layout/main-layout.component';
+import { MainLayout } from './core/layout/main-layout/main-layout';
 
 export const routes: Routes = [
   {
     path: '',
-    component: MainLayoutComponent,          // el layout es el "marco" de las rutas hijas
+    component: MainLayout,                   // el layout es el "marco" de las rutas hijas
     children: [
       { path: '', redirectTo: 'empleados', pathMatch: 'full' },
       {
@@ -989,9 +1009,9 @@ export const routes: Routes = [
 ];
 ```
 
-Las rutas que cuelgan de `MainLayoutComponent` se pintan dentro de su `<router-outlet />`. Las que quedan fuera (el login) se pintan sin toolbar ni sidenav.
+Las rutas que cuelgan de `MainLayout` se pintan dentro de su `<router-outlet />`. Las que quedan fuera (el login) se pintan sin toolbar ni sidenav.
 
-#### `app.component.html`
+#### `app.html`
 
 Sustituye todo el contenido generado por:
 
@@ -999,7 +1019,7 @@ Sustituye todo el contenido generado por:
 <router-outlet />
 ```
 
-Y en `app.component.ts` importa `RouterOutlet` en el array `imports`.
+El `app.ts` que genera el CLI ya importa `RouterOutlet` en su array `imports`, así que no hace falta tocarlo.
 
 > El contenido de `main-layout` (toolbar y sidenav de Material, con su propio `<router-outlet />`) lo construimos en la Fase 1.
 
@@ -1068,7 +1088,7 @@ Orden recomendado. Cada fase deja algo funcionando antes de pasar a la siguiente
 - [ ] Entidad `Usuario` con roles: `ADMIN`, `RRHH`, `EMPLEADO`
 - [ ] `AuthController` con `POST /api/auth/login` que devuelve un token
 - [ ] `SecurityConfig` y `JwtFilter` para proteger las rutas `/api/**`
-- [ ] En Angular: pantalla de login, `AuthService` que guarda el token, `jwt.interceptor` que lo añade a cada petición y `auth.guard` que protege las rutas
+- [ ] En Angular: pantalla de login, `AuthService` que guarda el token, `jwt-interceptor` que lo añade a cada petición y `auth-guard` que protege las rutas
 
 ### Fase 5 — Vacaciones
 - [ ] Entidad `SolicitudVacaciones` (empleado, fecha inicio, fecha fin, estado: `PENDIENTE`, `APROBADA`, `RECHAZADA`)
