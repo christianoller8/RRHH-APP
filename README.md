@@ -622,17 +622,17 @@ package com.empresa.rrhh.departamento;
 import jakarta.persistence.*;
 import lombok.*;
 
-@Entity
-@Table(name = "departamentos")
-@Getter @Setter
-@NoArgsConstructor @AllArgsConstructor
+@Entity                                    // esta clase se guarda como tabla
+@Table(name = "departamentos")             // nombre de la tabla en la BD
+@Getter @Setter                            // Lombok genera get/set en tiempo de compilación
+@NoArgsConstructor @AllArgsConstructor     // constructor vacío (lo exige JPA) y con todos los campos
 public class Departamento {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id                                                 // clave primaria
+    @GeneratedValue(strategy = GenerationType.IDENTITY)  // la BD autoincrementa el id
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true)   // no puede ser null ni repetirse
     private String nombre;
 }
 ```
@@ -675,8 +675,8 @@ public class Empleado {
 
     private boolean activo = true;
 
-    @ManyToOne
-    @JoinColumn(name = "departamento_id")
+    @ManyToOne                                     // muchos empleados, un departamento
+    @JoinColumn(name = "departamento_id")          // columna en "empleados" que guarda la relación
     private Departamento departamento;
 }
 ```
@@ -708,6 +708,8 @@ package com.empresa.rrhh.departamento;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+// extender JpaRepository<Departamento, Long> ya da save/findById/findAll/deleteById...
+// (Long = tipo de la clave primaria). Vacía porque todavía no necesitamos consultas propias.
 public interface DepartamentoRepository extends JpaRepository<Departamento, Long> {
 }
 ```
@@ -721,6 +723,10 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import java.time.LocalDate;
 
+// record = clase inmutable de solo datos; genera constructor, getters, equals/hashCode y toString.
+// Un único DTO para leer y para crear/editar: al crear, el cliente manda "id" y
+// "departamentoNombre" mismo cuando no los necesita, y el service los ignora.
+// Las anotaciones (@NotBlank, @Email) las dispara @Valid en el controller.
 public record EmpleadoDTO(
         Long id,
         @NotBlank String nombre,
@@ -738,6 +744,8 @@ public record EmpleadoDTO(
 ```java
 package com.empresa.rrhh.common.exception;
 
+// excepción propia (en vez de una genérica de Java) para que GlobalExceptionHandler
+// pueda distinguirla de cualquier otro error y traducirla siempre a 404
 public class RecursoNoEncontradoException extends RuntimeException {
     public RecursoNoEncontradoException(String mensaje) {
         super(mensaje);
@@ -883,36 +891,38 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
-@RestController
-@RequestMapping("/api/empleados")
+@RestController                        // @Controller + @ResponseBody: cada retorno se serializa a JSON
+@RequestMapping("/api/empleados")      // prefijo común para todos los métodos de la clase
 @RequiredArgsConstructor
 public class EmpleadoController {
 
     private final EmpleadoService empleadoService;
 
-    @GetMapping
+    @GetMapping                        // GET /api/empleados
     public List<EmpleadoDTO> listar() {
         return empleadoService.listarActivos();
     }
 
-    @GetMapping("/{id}")
-    public EmpleadoDTO obtener(@PathVariable Long id) {
+    @GetMapping("/{id}")               // GET /api/empleados/5
+    public EmpleadoDTO obtener(@PathVariable Long id) {    // {id} de la URL -> parámetro id
         return empleadoService.obtener(id);
     }
 
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping                                   // POST /api/empleados
+    @ResponseStatus(HttpStatus.CREATED)            // 201: se creó un recurso nuevo
     public EmpleadoDTO crear(@Valid @RequestBody EmpleadoDTO dto) {
+        // @RequestBody: convierte el JSON del body en EmpleadoDTO
+        // @Valid: dispara las anotaciones del DTO (@NotBlank, @Email); sin esto no harían nada
         return empleadoService.crear(dto);
     }
 
-    @PutMapping("/{id}")
+    @PutMapping("/{id}")               // PUT /api/empleados/5
     public EmpleadoDTO actualizar(@PathVariable Long id, @Valid @RequestBody EmpleadoDTO dto) {
         return empleadoService.actualizar(id, dto);
     }
 
-    @DeleteMapping("/{id}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/{id}")                        // DELETE /api/empleados/5
+    @ResponseStatus(HttpStatus.NO_CONTENT)         // 204: éxito, sin nada que devolver en el body
     public void darDeBaja(@PathVariable Long id) {
         empleadoService.darDeBaja(id);
     }

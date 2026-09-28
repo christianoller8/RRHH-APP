@@ -33,7 +33,7 @@ public class Empleado {
 
     private boolean activo = true;
 
-    @ManyToOne
-    @JoinColumn(name = "departamento_id")
+    @ManyToOne                                     // muchos empleados, un departamento
+    @JoinColumn(name = "departamento_id")          // columna en "empleados" que guarda la relación
     private Departamento departamento;
 }
