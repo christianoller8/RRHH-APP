@@ -53,7 +53,7 @@ Controller  →  Service  →  Repository  →  Base de datos
 | **Layout como componente de ruta** (`core/layout/main-layout`) | Las pantallas de la app cuelgan como rutas hijas del layout; el login queda fuera y no muestra toolbar ni sidenav. | Hay que entender las rutas anidadas y los `router-outlet` múltiples. |
 | **Nombres de archivo según el estilo 2025**, con `.service` conservado en los servicios | Es la guía oficial vigente. Conservar `.service` evita que el servicio `Empleado` choque con el modelo `Empleado`. | Los tutoriales antiguos usan `.component.ts`; hay que traducir los nombres. |
 | **Frontend sin `zone.js` (`--zoneless`) y con SCSS** | Angular repinta según los `signal()`. SCSS es imprescindible para el tema de Material 3. | Alguna librería de terceros puede asumir `zone.js`. *(pendiente de verificar con Material)* |
-| **Angular Material 3 en el frontend** | Componentes accesibles y un sistema de temas basado en variables CSS. | Aprender su sistema de theming además de Angular. *(pendiente de configurar)* |
+| **Angular Material 3 en el frontend**, con `provideAnimationsAsync()` | Componentes accesibles y un sistema de temas basado en variables CSS. `mat-sidenav` y otros componentes necesitan un proveedor de animaciones o fallan con error `NG05105`. | Aprender su sistema de theming además de Angular. |
 | **Proyecto de aprendizaje** | Cada pieza de código se explica (qué es y por qué) antes de escribirla. | Más lento, pero es el objetivo. |
 
 > **Dependencias entre features:** `empleado` depende de `departamento` (un empleado pertenece a un departamento), pero `departamento` no debe depender de `empleado`. Si dos features se necesitan mutuamente, es señal de que el diseño está mal cortado.
@@ -420,6 +420,191 @@ export const appConfig: ApplicationConfig = {
 ```
 
 > Al crear el proyecto con `--zoneless`, el CLI no añadió ningún proveedor de detección de cambios ni `zone.js` (ni como dependencia, ni en `angular.json`). En Angular 22 no hace falta declarar nada para trabajar sin `zone.js`.
+
+### 5.5 Instalar Angular Material 3
+
+```bash
+ng add @angular/material --skip-confirmation --defaults
+```
+
+`ng add` no es un `npm install` normal: es un *schematic*, un script que además de instalar el paquete **modifica tu proyecto**. Con `--defaults` toma las opciones por defecto sin preguntar: tema *Azure/Blue*, tipografía Roboto y densidad estándar. Tocó tres archivos:
+
+- **`package.json`**: añade `@angular/material` y `@angular/cdk` (el *Component Dev Kit*, la capa de accesibilidad y comportamiento sobre la que se construye Material).
+- **`src/index.html`**: añade la fuente Roboto y los iconos de Material Symbols desde Google Fonts.
+- **`src/styles.scss`**: añade el tema con el mixin `mat.theme`, que genera variables CSS (`--mat-sys-primary`, `--mat-sys-surface`...) usadas por todos los componentes.
+
+```scss
+@use '@angular/material' as mat;
+
+html {
+  height: 100%;
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$azure-palette,
+        tertiary: mat.$blue-palette,
+      ),
+      typography: Roboto,
+      density: 0,
+    )
+  );
+}
+
+body {
+  color-scheme: light;
+  background-color: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+  margin: 0;
+  height: 100%;
+}
+```
+
+> **`--defaults` no instala `@angular/animations`.** Varios componentes de Material (por ejemplo `mat-sidenav`, que usaremos en el layout) llevan animaciones con "escucha sintética" y **fallan con el error `NG05105`** si no hay un proveedor de animaciones configurado; no es solo un problema estético. Instálalo y regístralo:
+>
+> ```bash
+> npm install @angular/animations
+> ```
+>
+> ```typescript
+> import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+>
+> export const appConfig: ApplicationConfig = {
+>   providers: [
+>     provideBrowserGlobalErrorListeners(),
+>     provideRouter(routes),
+>     provideHttpClient(),
+>     provideAnimationsAsync() // varios componentes de Material (ej. mat-sidenav) fallan sin esto
+>   ]
+> };
+> ```
+>
+> `provideAnimationsAsync()` carga el módulo de animaciones de forma perezosa (aparece como *lazy chunk* en `ng build`, no en el paquete principal), en vez de `provideAnimations()`, que lo carga siempre de entrada.
+
+### 5.6 Layout base: toolbar y sidenav
+
+```bash
+ng generate component core/layout/main-layout
+```
+
+Piezas de Material que usa el layout, cada una en su propio módulo (por eso hay que importarlas todas en `imports`):
+
+| Módulo | Componente | Para qué |
+|---|---|---|
+| `MatToolbarModule` | `<mat-toolbar>` | La barra superior. |
+| `MatSidenavModule` | `<mat-sidenav-container>`, `<mat-sidenav>`, `<mat-sidenav-content>` | El esqueleto del layout: contenedor, menú lateral y el resto del contenido. |
+| `MatListModule` | `<mat-nav-list>`, `a[mat-list-item]` | La lista de enlaces de navegación dentro del menú. |
+| `MatIconModule` | `<mat-icon>` | Iconos de Material Symbols (instalados en el paso anterior). |
+| `MatButtonModule` | `button[mat-icon-button]` | El botón que abre y cierra el menú. |
+
+`main-layout.ts`:
+
+```typescript
+import { Component, signal } from '@angular/core';
+import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { MatToolbarModule } from '@angular/material/toolbar';
+import { MatSidenavModule } from '@angular/material/sidenav';
+import { MatListModule } from '@angular/material/list';
+import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
+
+@Component({
+  selector: 'app-main-layout',
+  imports: [
+    RouterLink,
+    RouterLinkActive,
+    RouterOutlet,
+    MatToolbarModule,
+    MatSidenavModule,
+    MatListModule,
+    MatIconModule,
+    MatButtonModule,
+  ],
+  templateUrl: './main-layout.html',
+  styleUrl: './main-layout.scss',
+})
+export class MainLayout {
+  // controla si el menú lateral está abierto o cerrado
+  menuAbierto = signal(true);
+
+  alternarMenu(): void {
+    this.menuAbierto.update((abierto) => !abierto);
+  }
+}
+```
+
+`main-layout.html`:
+
+```html
+<mat-sidenav-container class="contenedor">
+  <!-- menú lateral: mode="side" lo empuja el contenido en vez de taparlo -->
+  <mat-sidenav [opened]="menuAbierto()" mode="side" class="menu">
+    <mat-nav-list>
+      <a mat-list-item routerLink="/empleados" routerLinkActive="activo">
+        <mat-icon matListItemIcon>badge</mat-icon>
+        <span matListItemTitle>Empleados</span>
+      </a>
+    </mat-nav-list>
+  </mat-sidenav>
+
+  <mat-sidenav-content>
+    <mat-toolbar color="primary">
+      <button mat-icon-button (click)="alternarMenu()" aria-label="Abrir o cerrar el menú">
+        <mat-icon>menu</mat-icon>
+      </button>
+      <span>RRHH App</span>
+    </mat-toolbar>
+
+    <!-- aquí se pintan las rutas hijas: empleados, departamentos... -->
+    <main class="contenido">
+      <router-outlet />
+    </main>
+  </mat-sidenav-content>
+</mat-sidenav-container>
+```
+
+`main-layout.scss`:
+
+```scss
+.contenedor {
+  height: 100vh;
+}
+
+.menu {
+  width: 220px;
+}
+
+.contenido {
+  padding: 1.5rem;
+}
+```
+
+`app.routes.ts` conecta el layout como ruta padre (la decisión de rutas anidadas del punto 6.2):
+
+```typescript
+import { Routes } from '@angular/router';
+import { MainLayout } from './core/layout/main-layout/main-layout';
+
+export const routes: Routes = [
+  {
+    path: '',
+    component: MainLayout, // el layout es el "marco" de las rutas hijas
+    // sin children todavía: el <router-outlet> del layout queda vacío
+    // hasta que la fase 2 añada la ruta real de "empleados"
+    children: [],
+  },
+  // { path: 'login', ... }  → irá aquí, FUERA del layout (fase 4)
+  { path: '**', redirectTo: '' },
+];
+```
+
+Y `app.html` queda reducido a:
+
+```html
+<router-outlet />
+```
+
+> **Verificado:** con esto arrancado, el botón del menú alterna de verdad la clase `mat-drawer-opened` y desplaza el `<mat-sidenav>` con una animación (`transform: translateX(-220px)`), sin el error `NG05105`. La ruta `/empleados` todavía no pinta nada dentro del `<main>`: eso llega en la Fase 2.
 
 ---
 
@@ -1089,12 +1274,12 @@ ng serve
 
 Orden recomendado. Cada fase deja algo funcionando antes de pasar a la siguiente.
 
-### Fase 1 — Esqueleto *(código en esta guía)*
-- [ ] Crear backend y frontend
-- [ ] Configurar H2, proxy y HttpClient
-- [ ] Instalar Angular Material 3 y configurar el tema con el mixin `mat.theme`
-- [ ] Layout base: toolbar y sidenav vacíos con el `router-outlet` dentro (las pantallas de las demás fases se construyen ya sobre este layout)
-- [ ] Comprobar que ambos arrancan
+### Fase 1 — Esqueleto ✅
+- [x] Crear backend y frontend
+- [x] Configurar H2, proxy y HttpClient
+- [x] Instalar Angular Material 3 y configurar el tema con el mixin `mat.theme`
+- [x] Layout base: toolbar y sidenav con el `router-outlet` dentro (las pantallas de las demás fases se construyen ya sobre este layout)
+- [x] Comprobar que ambos arrancan
 
 ### Fase 2 — Empleados *(código en esta guía)*
 - [ ] Entidades `Empleado` y `Departamento`
