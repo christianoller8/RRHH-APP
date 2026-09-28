@@ -359,9 +359,11 @@ mkdir -p src/app/shared/models
 
 ### 5.3 Proxy para hablar con el backend
 
-Para evitar problemas de CORS en desarrollo, Angular redirige las peticiones `/api` al backend.
+**El problema (CORS).** Un *origen* es protocolo + host + puerto. Angular vive en `localhost:4200` y Spring en `localhost:8080`: son orígenes distintos, y el navegador bloquea que el JavaScript de uno lea las respuestas del otro salvo que el servidor lo autorice con cabeceras CORS.
 
-Crea `frontend/proxy.conf.json`:
+**La solución en desarrollo.** `ng serve` actúa de intermediario: recibe `localhost:4200/api/...` y lo reenvía a `localhost:8080/api/...`. Para el navegador todo viene del mismo origen. En producción lo hará un servidor como nginx.
+
+Crea `frontend/proxy.conf.json` (JSON no admite comentarios, por eso la explicación está aquí):
 
 ```json
 {
@@ -372,29 +374,52 @@ Crea `frontend/proxy.conf.json`:
 }
 ```
 
-Y en `angular.json`, dentro de `projects → frontend → architect → serve`, añade:
+- `"/api"`: la regla se aplica a toda URL que empiece por `/api`.
+- `"target"`: adónde se reenvía (el backend).
+- `"secure": false`: no valida certificados TLS del destino. Con un `target` en `http://` no tiene efecto; solo importaría si fuera `https://` con un certificado autofirmado.
+
+Y en `angular.json`, dentro de `projects → frontend → architect → serve`, añade `options` justo debajo de `builder` (en Angular 22 el bloque `serve` solo trae `configurations`):
 
 ```json
-"options": {
-  "proxyConfig": "proxy.conf.json"
+"serve": {
+  "builder": "@angular/build:dev-server",
+  "options": {
+    "proxyConfig": "proxy.conf.json"
+  },
+  "configurations": { ... }
 }
 ```
 
+**Cómo comprobar que funciona.** Con backend y `ng serve` arrancados, pide la misma URL a los dos puertos. Si el proxy actúa, ambas devuelven el mismo JSON de Spring (todavía sin endpoint, un 404 con `"path":"/api/empleados"`):
+
+```bash
+curl http://localhost:8080/api/empleados   # directo a Spring
+curl http://localhost:4200/api/empleados   # a través del proxy de Angular
+```
+
+Una ruta que no empieza por `/api` (`curl http://localhost:4200/empleados`) la sigue sirviendo Angular con su `index.html`.
+
 ### 5.4 Activar HttpClient: `src/app/app.config.ts`
 
+`provideHttpClient()` registra el servicio `HttpClient` en la inyección de dependencias. Sin él, cualquier servicio que haga `inject(HttpClient)` falla con `NullInjectorError`.
+
 ```typescript
-import { ApplicationConfig } from '@angular/core';
+import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
+
 import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
   providers: [
+    provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
-    provideHttpClient()
+    provideHttpClient() // registra HttpClient para poder inyectarlo en los servicios
   ]
 };
 ```
+
+> Al crear el proyecto con `--zoneless`, el CLI no añadió ningún proveedor de detección de cambios ni `zone.js` (ni como dependencia, ni en `angular.json`). En Angular 22 no hace falta declarar nada para trabajar sin `zone.js`.
 
 ---
 
