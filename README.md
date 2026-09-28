@@ -946,6 +946,15 @@ http://localhost:8080/api/empleados
 
 Deberías ver los tres empleados en JSON.
 
+> **`curl -d '...'` con tildes falla en Windows con `Invalid UTF-8 middle byte` (verificado).** Git Bash pasa el argumento al `curl.exe` nativo de Windows, que lo reinterpreta con la codificación de la consola y corrompe los caracteres multibyte (í, ñ, á...) antes de que lleguen al backend. El código Java no tiene ningún problema: es un artefacto del terminal. Para probar con tildes desde `curl`, manda el JSON desde un archivo UTF-8 en vez de como argumento:
+>
+> ```bash
+> printf '{"nombre":"Lucía","apellidos":"García López","email":"lucia.garcia@empresa.com","departamentoId":1}' > body.json
+> curl -X PUT http://localhost:8080/api/empleados/1 -H "Content-Type: application/json" --data-binary @body.json
+> ```
+>
+> El navegador y Angular no tienen este problema: mandan UTF-8 correctamente. Solo afecta a pruebas manuales con `curl` en Windows.
+
 ### 6.2 Frontend
 
 #### `shared/models/empleado.model.ts`
