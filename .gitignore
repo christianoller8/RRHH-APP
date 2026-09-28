@@ -1,0 +1,16 @@
+# Backend
+backend/target/
+backend/.idea/
+*.iml
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+
+# Sistema
+.DS_Store
+.vscode/
+
+# Herramientas locales del asistente (no es código del proyecto)
+.atl/
