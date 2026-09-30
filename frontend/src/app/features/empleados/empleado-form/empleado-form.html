@@ -21,13 +21,12 @@
     <input matInput formControlName="puesto" />
   </mat-form-field>
 
-  <!-- fijo por ahora: en la fase 3 se carga desde /api/departamentos -->
   <mat-form-field>
     <mat-label>Departamento</mat-label>
     <mat-select formControlName="departamentoId">
-      <mat-option [value]="1">Recursos Humanos</mat-option>
-      <mat-option [value]="2">Desarrollo</mat-option>
-      <mat-option [value]="3">Administración</mat-option>
+      @for (dep of departamentos(); track dep.id) {
+        <mat-option [value]="dep.id">{{ dep.nombre }}</mat-option>
+      }
     </mat-select>
   </mat-form-field>
 

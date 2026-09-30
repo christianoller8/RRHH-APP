@@ -14,6 +14,13 @@ export const routes: Routes = [
         loadChildren: () =>
           import('./features/empleados/empleados.routes').then((m) => m.EMPLEADOS_ROUTES),
       },
+      {
+        path: 'departamentos',
+        loadChildren: () =>
+          import('./features/departamentos/departamentos.routes').then(
+            (m) => m.DEPARTAMENTOS_ROUTES,
+          ),
+      },
     ],
   },
   // { path: 'login', ... }  → irá aquí, FUERA del layout (fase 4)

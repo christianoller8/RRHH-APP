@@ -1,0 +1,22 @@
+<h1>Departamentos</h1>
+
+@if (cargando()) {
+  <mat-spinner />
+} @else if (error()) {
+  <p class="error">{{ error() }}</p>
+} @else {
+  <table mat-table [dataSource]="departamentos()" class="tabla">
+    <ng-container matColumnDef="nombre">
+      <th mat-header-cell *matHeaderCellDef>Nombre</th>
+      <td mat-cell *matCellDef="let dep">{{ dep.nombre }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="totalEmpleados">
+      <th mat-header-cell *matHeaderCellDef>Empleados</th>
+      <td mat-cell *matCellDef="let dep">{{ dep.totalEmpleados }}</td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="columnas"></tr>
+    <tr mat-row *matRowDef="let row; columns: columnas"></tr>
+  </table>
+}
