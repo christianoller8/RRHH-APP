@@ -64,7 +64,7 @@ Controller  →  Service  →  Repository  →  Base de datos
 
 | Herramienta | Versión recomendada | Comprobar con |
 |---|---|---|
-| Java JDK | 21 | `java -version` |
+| Java JDK | 25 | `java -version` |
 | Node.js | 20 o superior (LTS) | `node -v` |
 | Angular CLI | la última | `ng version` |
 | Git | cualquiera | `git --version` |
@@ -205,7 +205,7 @@ git init
 | Artifact | `rrhh` |
 | Package name | `com.empresa.rrhh` |
 | Packaging | Jar |
-| Java | 21 |
+| Java | 25 |
 | Dependencies | Spring Web, Spring Data JPA, H2 Database, Validation, Lombok |
 
 Descarga el zip, descomprímelo dentro de `rrhh-app/` y renombra la carpeta a `backend`.
@@ -217,7 +217,7 @@ curl https://start.spring.io/starter.zip \
   -d type=maven-project \
   -d language=java \
   -d bootVersion=4.1.1 \
-  -d javaVersion=21 \
+  -d javaVersion=25 \
   -d groupId=com.empresa \
   -d artifactId=rrhh \
   -d name=rrhh \
