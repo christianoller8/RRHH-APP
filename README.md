@@ -57,6 +57,7 @@ Controller  →  Service  →  Repository  →  Base de datos
 | **Pantallas de empleados con componentes de Material** (`mat-table`, `mat-form-field`, `mat-select`), no HTML plano | Consistente con el layout de la fase 1; se reutiliza en departamentos y vacaciones. | Más superficie de API de Material que aprender de una vez. |
 | **Java 25 en vez de 21** | Es la LTS más reciente (soporte hasta 2033), y así no hace falta migrar más adelante. | Ninguno relevante para este proyecto: se verificó que Boot 4.1.1 e Hibernate 7.4.5 compilan y arrancan igual que en 21. |
 | **`Departamento` sin baja lógica** (a diferencia de `Empleado`) | Un departamento vacío no arrastra historial que preservar; borrarlo de verdad es más simple y no exige tocar el esquema. El `DepartamentoService` bloquea el borrado con un error claro si todavía tiene empleados asignados (activos o no), en vez de soft-delete. | Enseña un patrón distinto (bloquear por dependencia) al de `Empleado`, en vez de repetir el mismo. |
+| **`DepartamentoService` frontend con solo `listar()`** | El roadmap de la fase 3 solo pide un listado de solo lectura y el desplegable del formulario de empleados; no hay pantalla para crear/editar/borrar departamentos todavía. | El backend ya tiene el CRUD completo (fase 3 backend); si en el futuro se añade esa UI, el servicio se completa entonces, no antes. |
 | **Proyecto de aprendizaje** | Cada pieza de código se explica (qué es y por qué) antes de escribirla. | Más lento, pero es el objetivo. |
 
 > **Dependencias entre features:** `empleado` depende de `departamento` (un empleado pertenece a un departamento), pero `departamento` no debe depender de `empleado`. Si dos features se necesitan mutuamente, es señal de que el diseño está mal cortado.
@@ -546,6 +547,10 @@ export class MainLayout {
       <a mat-list-item routerLink="/empleados" routerLinkActive="activo">
         <mat-icon matListItemIcon>badge</mat-icon>
         <span matListItemTitle>Empleados</span>
+      </a>
+      <a mat-list-item routerLink="/departamentos" routerLinkActive="activo">
+        <mat-icon matListItemIcon>apartment</mat-icon>
+        <span matListItemTitle>Departamentos</span>
       </a>
     </mat-nav-list>
   </mat-sidenav>
@@ -1175,7 +1180,7 @@ export class EmpleadoList implements OnInit {
 Piezas de Material: `MatFormFieldModule` da el contenedor con la etiqueta flotante, `MatInputModule` conecta un `<input>` normal a ese contenedor (directiva `matInput`) y `MatSelectModule` es el equivalente a un `<select>`.
 
 ```typescript
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -1184,6 +1189,8 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
 import { EmpleadoService } from '../empleado.service';
 import { Empleado } from '../../../shared/models/empleado.model';
+import { DepartamentoService } from '../../departamentos/departamento.service';
+import { Departamento } from '../../../shared/models/departamento.model';
 
 @Component({
   selector: 'app-empleado-form',
@@ -1203,18 +1210,23 @@ export class EmpleadoForm implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private empleadoService = inject(EmpleadoService);
+  private departamentoService = inject(DepartamentoService);
 
   id: number | null = null; // null = creando; con valor = editando ese id
+  departamentos = signal<Departamento[]>([]);
 
   form = this.fb.nonNullable.group({
     nombre: ['', Validators.required],
     apellidos: ['', Validators.required],
     email: ['', [Validators.required, Validators.email]],
     puesto: [''],
-    departamentoId: [1],
+    // sin id fijo por defecto: ya no podemos asumir que el departamento 1 existe
+    departamentoId: this.fb.control<number | null>(null, Validators.required),
   });
 
   ngOnInit(): void {
+    this.departamentoService.listar().subscribe((datos) => this.departamentos.set(datos));
+
     const idParam = this.route.snapshot.paramMap.get('id');
     if (idParam) {
       this.id = Number(idParam);
@@ -1227,7 +1239,10 @@ export class EmpleadoForm implements OnInit {
       this.form.markAllAsTouched(); // fuerza a mostrar los errores de validación
       return;
     }
-    const datos: Empleado = this.form.getRawValue();
+    const valores = this.form.getRawValue();
+    // el "!" es seguro aquí: this.form.invalid ya comprobó arriba que
+    // departamentoId cumple Validators.required, así que no puede ser null
+    const datos: Empleado = { ...valores, departamentoId: valores.departamentoId! };
     const peticion = this.id
       ? this.empleadoService.actualizar(this.id, datos)
       : this.empleadoService.crear(datos);
@@ -1236,6 +1251,8 @@ export class EmpleadoForm implements OnInit {
   }
 }
 ```
+
+> `departamentoId` pasó de tener un valor fijo (`[1]`) a `this.fb.control<number | null>(null, Validators.required)`: ya no podemos asumir que el departamento con id 1 siempre existe (ahora se pueden crear y borrar). Eso obliga a manejar `null` en el tipo, de ahí la aserción `!` en `guardar()`.
 
 #### `features/empleados/empleado-form/empleado-form.html`
 
@@ -1263,13 +1280,12 @@ export class EmpleadoForm implements OnInit {
     <input matInput formControlName="puesto" />
   </mat-form-field>
 
-  <!-- fijo por ahora: en la fase 3 se carga desde /api/departamentos -->
   <mat-form-field>
     <mat-label>Departamento</mat-label>
     <mat-select formControlName="departamentoId">
-      <mat-option [value]="1">Recursos Humanos</mat-option>
-      <mat-option [value]="2">Desarrollo</mat-option>
-      <mat-option [value]="3">Administración</mat-option>
+      @for (dep of departamentos(); track dep.id) {
+        <mat-option [value]="dep.id">{{ dep.nombre }}</mat-option>
+      }
     </mat-select>
   </mat-form-field>
 
@@ -1296,8 +1312,6 @@ export class EmpleadoForm implements OnInit {
   margin-top: 1rem;
 }
 ```
-
-> Más adelante, las opciones del desplegable de departamentos se cargarán desde `/api/departamentos` en vez de estar fijas.
 
 #### `features/empleados/empleado-detail/empleado-detail.ts`
 
@@ -1403,18 +1417,27 @@ import { MainLayout } from './core/layout/main-layout/main-layout';
 export const routes: Routes = [
   {
     path: '',
-    component: MainLayout,                   // el layout es el "marco" de las rutas hijas
+    component: MainLayout, // el layout es el "marco" de las rutas hijas
     children: [
       { path: '', redirectTo: 'empleados', pathMatch: 'full' },
       {
         path: 'empleados',
+        // loadChildren: el código de empleados se descarga solo al navegar aquí,
+        // no en el bundle inicial (lazy loading)
         loadChildren: () =>
-          import('./features/empleados/empleados.routes').then(m => m.EMPLEADOS_ROUTES)
-      }
-    ]
+          import('./features/empleados/empleados.routes').then((m) => m.EMPLEADOS_ROUTES),
+      },
+      {
+        path: 'departamentos',
+        loadChildren: () =>
+          import('./features/departamentos/departamentos.routes').then(
+            (m) => m.DEPARTAMENTOS_ROUTES,
+          ),
+      },
+    ],
   },
   // { path: 'login', ... }  → irá aquí, FUERA del layout (fase 4)
-  { path: '**', redirectTo: '' }
+  { path: '**', redirectTo: '' },
 ];
 ```
 
@@ -1613,6 +1636,118 @@ public class DepartamentoController {
 
 > **Comprobado en caliente** (instancia de prueba, sin tocar el backend del desarrollador): listar con conteos correctos, crear, rechazar nombre duplicado (`400`), bloquear el borrado de un departamento con empleados (`400` con mensaje claro), permitir el borrado de uno vacío (`204`), `404` en id inexistente. Caso clave: un empleado dado de baja (`activo=false`) hace bajar `totalEmpleados` a 0 en el listado, pero **sigue bloqueando el borrado** del departamento — los dos conteos hacen su trabajo por separado.
 
+### 6.4 Frontend de departamentos (fase 3)
+
+Solo un listado de solo lectura: el roadmap de esta fase no pide crear, editar ni borrar departamentos desde la interfaz, así que el servicio de Angular no tiene esos métodos todavía — ver la tabla de "Decisiones de diseño".
+
+#### `shared/models/departamento.model.ts`
+
+```typescript
+export interface Departamento {
+  id?: number;
+  nombre: string;
+  totalEmpleados?: number;
+}
+```
+
+#### `features/departamentos/departamento.service.ts`
+
+```typescript
+import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { Departamento } from '../../shared/models/departamento.model';
+
+@Injectable({ providedIn: 'root' })
+export class DepartamentoService {
+  private http = inject(HttpClient);
+  private apiUrl = '/api/departamentos';
+
+  listar(): Observable<Departamento[]> {
+    return this.http.get<Departamento[]>(this.apiUrl);
+  }
+}
+```
+
+#### `features/departamentos/departamento-list/departamento-list.ts`
+
+```typescript
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { MatTableModule } from '@angular/material/table';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { DepartamentoService } from '../departamento.service';
+import { Departamento } from '../../../shared/models/departamento.model';
+
+@Component({
+  selector: 'app-departamento-list',
+  imports: [MatTableModule, MatProgressSpinnerModule],
+  templateUrl: './departamento-list.html',
+  styleUrl: './departamento-list.scss',
+})
+export class DepartamentoList implements OnInit {
+  private departamentoService = inject(DepartamentoService);
+
+  departamentos = signal<Departamento[]>([]);
+  cargando = signal(true);
+  error = signal<string | null>(null);
+
+  columnas = ['nombre', 'totalEmpleados'];
+
+  ngOnInit(): void {
+    this.departamentoService.listar().subscribe({
+      next: (datos) => {
+        this.departamentos.set(datos);
+        this.cargando.set(false);
+      },
+      error: () => {
+        this.error.set('No se han podido cargar los departamentos');
+        this.cargando.set(false);
+      },
+    });
+  }
+}
+```
+
+#### `features/departamentos/departamento-list/departamento-list.html`
+
+```html
+<h1>Departamentos</h1>
+
+@if (cargando()) {
+  <mat-spinner />
+} @else if (error()) {
+  <p class="error">{{ error() }}</p>
+} @else {
+  <table mat-table [dataSource]="departamentos()" class="tabla">
+    <ng-container matColumnDef="nombre">
+      <th mat-header-cell *matHeaderCellDef>Nombre</th>
+      <td mat-cell *matCellDef="let dep">{{ dep.nombre }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="totalEmpleados">
+      <th mat-header-cell *matHeaderCellDef>Empleados</th>
+      <td mat-cell *matCellDef="let dep">{{ dep.totalEmpleados }}</td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="columnas"></tr>
+    <tr mat-row *matRowDef="let row; columns: columnas"></tr>
+  </table>
+}
+```
+
+#### `features/departamentos/departamentos.routes.ts`
+
+```typescript
+import { Routes } from '@angular/router';
+import { DepartamentoList } from './departamento-list/departamento-list';
+
+export const DEPARTAMENTOS_ROUTES: Routes = [{ path: '', component: DepartamentoList }];
+```
+
+Se cuelga de `app.routes.ts` igual que `empleados`, con su propio `loadChildren` (sección anterior), y se enlaza desde el menú lateral en `main-layout.html` (sección 5.6).
+
+> **Probado en el navegador:** listado con los conteos reales, el desplegable del formulario de empleados cargando departamentos desde la API en vez de las tres opciones fijas, y el contador subiendo de verdad al crear un empleado nuevo.
+
 ---
 
 ## 7. Arrancar la aplicación
@@ -1667,11 +1802,11 @@ Orden recomendado. Cada fase deja algo funcionando antes de pasar a la siguiente
 - [x] Listado y formulario en Angular (con Angular Material) — probado en el navegador: crear, editar y dar de baja funcionan de punta a punta
 - [x] Pantalla de detalle (`empleado-detail`) — ruta propia `/empleados/:id`, con `mat-card`; probada en el navegador
 
-### Fase 3 — Departamentos
+### Fase 3 — Departamentos ✅
 - [x] `DepartamentoService` y `DepartamentoController` (`GET`, `POST`, `PUT`, `DELETE`) — probado en caliente
-- [ ] Listado de departamentos en Angular
-- [ ] Cargar el desplegable del formulario de empleados desde la API
-- [ ] Mostrar cuántos empleados tiene cada departamento
+- [x] Listado de departamentos en Angular — probado en el navegador
+- [x] Cargar el desplegable del formulario de empleados desde la API
+- [x] Mostrar cuántos empleados tiene cada departamento — verificado que el conteo sube al crear un empleado
 
 ### Fase 4 — Autenticación y roles
 - [ ] Añadir dependencia `spring-boot-starter-security` y una librería JWT (por ejemplo `jjwt`)
