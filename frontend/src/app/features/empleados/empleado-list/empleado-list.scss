@@ -1,0 +1,14 @@
+.cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.tabla {
+  width: 100%;
+}
+
+.error {
+  color: var(--mat-sys-error); // variable del tema, no un color fijo
+}

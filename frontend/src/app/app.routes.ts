@@ -5,9 +5,16 @@ export const routes: Routes = [
   {
     path: '',
     component: MainLayout, // el layout es el "marco" de las rutas hijas
-    // sin children todavía: el <router-outlet> del layout queda vacío
-    // hasta que la fase 2 añada la ruta real de "empleados"
-    children: [],
+    children: [
+      { path: '', redirectTo: 'empleados', pathMatch: 'full' },
+      {
+        path: 'empleados',
+        // loadChildren: el código de empleados se descarga solo al navegar aquí,
+        // no en el bundle inicial (lazy loading)
+        loadChildren: () =>
+          import('./features/empleados/empleados.routes').then((m) => m.EMPLEADOS_ROUTES),
+      },
+    ],
   },
   // { path: 'login', ... }  → irá aquí, FUERA del layout (fase 4)
   { path: '**', redirectTo: '' },
