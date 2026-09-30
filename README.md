@@ -1102,7 +1102,9 @@ export class EmpleadoList implements OnInit {
     <!-- cada matColumnDef agrupa la cabecera y la celda de UNA columna -->
     <ng-container matColumnDef="nombre">
       <th mat-header-cell *matHeaderCellDef>Nombre</th>
-      <td mat-cell *matCellDef="let emp">{{ emp.nombre }} {{ emp.apellidos }}</td>
+      <td mat-cell *matCellDef="let emp">
+        <a [routerLink]="['/empleados', emp.id]">{{ emp.nombre }} {{ emp.apellidos }}</a>
+      </td>
     </ng-container>
 
     <ng-container matColumnDef="email">
@@ -1296,17 +1298,98 @@ export class EmpleadoForm implements OnInit {
 
 > Más adelante, las opciones del desplegable de departamentos se cargarán desde `/api/departamentos` en vez de estar fijas.
 
+#### `features/empleados/empleado-detail/empleado-detail.ts`
+
+Pantalla de solo lectura en su propia ruta (`/empleados/:id`), coherente con el patrón de `nuevo`/`editar`. Reutiliza `EmpleadoService.obtener(id)`, el mismo método que ya usa el formulario para precargar datos. Pieza nueva de Material: `MatCardModule`.
+
+```typescript
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { DatePipe } from '@angular/common';
+import { MatCardModule } from '@angular/material/card';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
+import { EmpleadoService } from '../empleado.service';
+import { Empleado } from '../../../shared/models/empleado.model';
+
+@Component({
+  selector: 'app-empleado-detail',
+  imports: [RouterLink, DatePipe, MatCardModule, MatButtonModule, MatIconModule],
+  templateUrl: './empleado-detail.html',
+  styleUrl: './empleado-detail.scss',
+})
+export class EmpleadoDetail implements OnInit {
+  private route = inject(ActivatedRoute);
+  private empleadoService = inject(EmpleadoService);
+
+  empleado = signal<Empleado | null>(null);
+  cargando = signal(true);
+  error = signal<string | null>(null);
+
+  ngOnInit(): void {
+    const id = Number(this.route.snapshot.paramMap.get('id'));
+    this.empleadoService.obtener(id).subscribe({
+      next: (emp) => {
+        this.empleado.set(emp);
+        this.cargando.set(false);
+      },
+      error: () => {
+        this.error.set('No se ha podido cargar el empleado');
+        this.cargando.set(false);
+      },
+    });
+  }
+}
+```
+
+#### `features/empleados/empleado-detail/empleado-detail.html`
+
+`@if (empleado(); as emp)`: además de comprobar la condición, guarda el valor en la variable local `emp` para el resto del bloque — evita repetir `empleado()!` con el `!` forzando a TypeScript a ignorar que podría ser `null`.
+
+```html
+@if (cargando()) {
+  <p>Cargando...</p>
+} @else if (error()) {
+  <p class="error">{{ error() }}</p>
+} @else if (empleado(); as emp) {
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>{{ emp.nombre }} {{ emp.apellidos }}</mat-card-title>
+      <mat-card-subtitle>{{ emp.puesto }}</mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <p><strong>Email:</strong> {{ emp.email }}</p>
+      <p><strong>Departamento:</strong> {{ emp.departamentoNombre }}</p>
+      <p><strong>Fecha de alta:</strong> {{ emp.fechaAlta | date: 'dd/MM/yyyy' }}</p>
+    </mat-card-content>
+    <mat-card-actions>
+      <a mat-flat-button color="primary" [routerLink]="['/empleados', emp.id, 'editar']">
+        <mat-icon>edit</mat-icon>
+        Editar
+      </a>
+      <a mat-button routerLink="/empleados">Volver</a>
+    </mat-card-actions>
+  </mat-card>
+}
+```
+
+> En `empleado-list.html`, la celda de nombre pasa a ser un enlace (`<a [routerLink]="['/empleados', emp.id]">`) a esta pantalla: es el único punto de entrada, sin él la ruta existiría pero nada la enlazaría.
+
 #### `features/empleados/empleados.routes.ts`
 
 ```typescript
 import { Routes } from '@angular/router';
 import { EmpleadoList } from './empleado-list/empleado-list';
 import { EmpleadoForm } from './empleado-form/empleado-form';
+import { EmpleadoDetail } from './empleado-detail/empleado-detail';
 
+// el router prueba las rutas en orden: "nuevo" (literal) debe ir ANTES que ":id"
+// (dinámica), si no, "/empleados/nuevo" se interpretaría como id="nuevo"
 export const EMPLEADOS_ROUTES: Routes = [
   { path: '', component: EmpleadoList },
   { path: 'nuevo', component: EmpleadoForm },
-  { path: ':id/editar', component: EmpleadoForm }
+  { path: ':id/editar', component: EmpleadoForm },
+  { path: ':id', component: EmpleadoDetail },
 ];
 ```
 
@@ -1396,11 +1479,11 @@ Orden recomendado. Cada fase deja algo funcionando antes de pasar a la siguiente
 - [x] Layout base: toolbar y sidenav con el `router-outlet` dentro (las pantallas de las demás fases se construyen ya sobre este layout)
 - [x] Comprobar que ambos arrancan
 
-### Fase 2 — Empleados *(código en esta guía)*
+### Fase 2 — Empleados ✅
 - [x] Entidades `Empleado` y `Departamento`
 - [x] CRUD completo en el backend
 - [x] Listado y formulario en Angular (con Angular Material) — probado en el navegador: crear, editar y dar de baja funcionan de punta a punta
-- [ ] Pantalla de detalle (`empleado-detail`)
+- [x] Pantalla de detalle (`empleado-detail`) — ruta propia `/empleados/:id`, con `mat-card`; probada en el navegador
 
 ### Fase 3 — Departamentos
 - [ ] `DepartamentoService` y `DepartamentoController` (`GET`, `POST`, `PUT`, `DELETE`)
