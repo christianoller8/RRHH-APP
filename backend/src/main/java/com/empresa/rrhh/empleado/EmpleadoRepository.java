@@ -12,4 +12,11 @@ public interface EmpleadoRepository extends JpaRepository<Empleado, Long> {
 
     // Igual que existsByEmail, pero ignora al propio empleado: sirve para editar
     boolean existsByEmailAndIdNot(String email, Long id);
+
+    // para MOSTRAR cuántos empleados tiene un departamento: solo los activos
+    long countByDepartamentoIdAndActivoTrue(Long departamentoId);
+
+    // para decidir si se puede BORRAR un departamento: todos, activos o no
+    // (la clave foránea de la BD no distingue por "activo")
+    long countByDepartamentoId(Long departamentoId);
 }
