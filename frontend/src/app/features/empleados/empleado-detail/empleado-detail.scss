@@ -1,0 +1,12 @@
+mat-card {
+  max-width: 400px;
+}
+
+mat-card-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.error {
+  color: var(--mat-sys-error);
+}

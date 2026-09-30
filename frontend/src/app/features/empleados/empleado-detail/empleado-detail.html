@@ -1,0 +1,24 @@
+@if (cargando()) {
+  <p>Cargando...</p>
+} @else if (error()) {
+  <p class="error">{{ error() }}</p>
+} @else if (empleado(); as emp) {
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>{{ emp.nombre }} {{ emp.apellidos }}</mat-card-title>
+      <mat-card-subtitle>{{ emp.puesto }}</mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <p><strong>Email:</strong> {{ emp.email }}</p>
+      <p><strong>Departamento:</strong> {{ emp.departamentoNombre }}</p>
+      <p><strong>Fecha de alta:</strong> {{ emp.fechaAlta | date: 'dd/MM/yyyy' }}</p>
+    </mat-card-content>
+    <mat-card-actions>
+      <a mat-flat-button color="primary" [routerLink]="['/empleados', emp.id, 'editar']">
+        <mat-icon>edit</mat-icon>
+        Editar
+      </a>
+      <a mat-button routerLink="/empleados">Volver</a>
+    </mat-card-actions>
+  </mat-card>
+}
