@@ -56,6 +56,7 @@ Controller  →  Service  →  Repository  →  Base de datos
 | **Angular Material 3 en el frontend**, con `provideAnimationsAsync()` | Componentes accesibles y un sistema de temas basado en variables CSS. `mat-sidenav` y otros componentes necesitan un proveedor de animaciones o fallan con error `NG05105`. | Aprender su sistema de theming además de Angular. |
 | **Pantallas de empleados con componentes de Material** (`mat-table`, `mat-form-field`, `mat-select`), no HTML plano | Consistente con el layout de la fase 1; se reutiliza en departamentos y vacaciones. | Más superficie de API de Material que aprender de una vez. |
 | **Java 25 en vez de 21** | Es la LTS más reciente (soporte hasta 2033), y así no hace falta migrar más adelante. | Ninguno relevante para este proyecto: se verificó que Boot 4.1.1 e Hibernate 7.4.5 compilan y arrancan igual que en 21. |
+| **`Departamento` sin baja lógica** (a diferencia de `Empleado`) | Un departamento vacío no arrastra historial que preservar; borrarlo de verdad es más simple y no exige tocar el esquema. El `DepartamentoService` bloquea el borrado con un error claro si todavía tiene empleados asignados (activos o no), en vez de soft-delete. | Enseña un patrón distinto (bloquear por dependencia) al de `Empleado`, en vez de repetir el mismo. |
 | **Proyecto de aprendizaje** | Cada pieza de código se explica (qué es y por qué) antes de escribirla. | Más lento, pero es el objetivo. |
 
 > **Dependencias entre features:** `empleado` depende de `departamento` (un empleado pertenece a un departamento), pero `departamento` no debe depender de `empleado`. Si dos features se necesitan mutuamente, es señal de que el diseño está mal cortado.
@@ -1431,6 +1432,187 @@ El `app.ts` que genera el CLI ya importa `RouterOutlet` en su array `imports`, a
 
 > El contenido de `main-layout` (toolbar y sidenav de Material, con su propio `<router-outlet />`) lo construimos en la Fase 1.
 
+### 6.3 Backend de departamentos (fase 3)
+
+Mismo patrón que empleados, con dos decisiones propias:
+
+- **Sin baja lógica.** `Departamento` no tiene campo `activo`: si no tiene empleados asignados, se borra de verdad. Si el frontend de `Empleado` necesita conservar historial, `Departamento` no arrastra esa necesidad — ver la tabla de "Decisiones de diseño" al principio.
+- **Dos conteos distintos en `EmpleadoRepository`**, no uno: uno para *mostrar* cuántos empleados activos tiene un departamento, y otro para *decidir si se puede borrar*. La clave foránea de la base de datos no distingue por `activo` — si hay una fila en `empleados` apuntando a ese `departamento_id`, aunque esté dado de baja, el `DELETE` revienta igual. El segundo conteo tiene que ser tan estricto como la propia base de datos.
+
+#### `empleado/EmpleadoRepository.java` (métodos añadidos)
+
+```java
+// para MOSTRAR cuántos empleados tiene un departamento: solo los activos
+long countByDepartamentoIdAndActivoTrue(Long departamentoId);
+
+// para decidir si se puede BORRAR un departamento: todos, activos o no
+// (la clave foránea de la BD no distingue por "activo")
+long countByDepartamentoId(Long departamentoId);
+```
+
+#### `departamento/DepartamentoRepository.java`
+
+```java
+package com.empresa.rrhh.departamento;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface DepartamentoRepository extends JpaRepository<Departamento, Long> {
+
+    boolean existsByNombre(String nombre);
+
+    // igual que existsByNombre, pero ignora al propio departamento: sirve para editar
+    boolean existsByNombreAndIdNot(String nombre, Long id);
+}
+```
+
+#### `departamento/DepartamentoDTO.java`
+
+```java
+package com.empresa.rrhh.departamento;
+
+import jakarta.validation.constraints.NotBlank;
+
+// totalEmpleados es un campo calculado: no se guarda en la tabla,
+// el service lo rellena al listar contando empleados activos.
+// Long (no "long"): si el cliente no lo manda, Jackson necesita poder
+// ponerle null; un primitivo nunca admite null y el parseo fallaría.
+public record DepartamentoDTO(
+        Long id,
+        @NotBlank String nombre,
+        Long totalEmpleados
+) {}
+```
+
+> **Comprobado en caliente:** con `totalEmpleados` como `long` primitivo, un `POST` sin ese campo fallaba con `JSON parse error: Cannot map 'null' into type 'long'`. Un `record` usado también para *recibir* datos no puede tener campos primitivos que el cliente no vaya a mandar.
+
+#### `departamento/DepartamentoService.java`
+
+```java
+package com.empresa.rrhh.departamento;
+
+import com.empresa.rrhh.common.exception.RecursoNoEncontradoException;
+import com.empresa.rrhh.empleado.EmpleadoRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+public class DepartamentoService {
+
+    private final DepartamentoRepository departamentoRepository;
+    private final EmpleadoRepository empleadoRepository;
+
+    public List<DepartamentoDTO> listar() {
+        return departamentoRepository.findAll()
+                .stream()
+                .map(this::toDTO)
+                .toList();
+    }
+
+    public DepartamentoDTO obtener(Long id) {
+        return toDTO(buscar(id));
+    }
+
+    @Transactional
+    public DepartamentoDTO crear(DepartamentoDTO dto) {
+        if (departamentoRepository.existsByNombre(dto.nombre())) {
+            throw new IllegalArgumentException("Ya existe un departamento con ese nombre");
+        }
+        Departamento departamento = new Departamento();
+        departamento.setNombre(dto.nombre());
+        return toDTO(departamentoRepository.save(departamento));
+    }
+
+    @Transactional
+    public DepartamentoDTO actualizar(Long id, DepartamentoDTO dto) {
+        Departamento departamento = buscar(id);
+        if (departamentoRepository.existsByNombreAndIdNot(dto.nombre(), id)) {
+            throw new IllegalArgumentException("Ya existe un departamento con ese nombre");
+        }
+        departamento.setNombre(dto.nombre());
+        return toDTO(departamentoRepository.save(departamento));
+    }
+
+    @Transactional
+    public void eliminar(Long id) {
+        buscar(id); // lanza 404 si no existe
+
+        // cuenta TODOS los empleados (activos o no): la FK de la BD no
+        // distingue por "activo", así que la comprobación tiene que ser igual de estricta
+        long empleados = empleadoRepository.countByDepartamentoId(id);
+        if (empleados > 0) {
+            throw new IllegalArgumentException(
+                    "No se puede eliminar: tiene " + empleados + " empleado(s) asignado(s)");
+        }
+        departamentoRepository.deleteById(id);
+    }
+
+    // ---- métodos auxiliares ----
+
+    private Departamento buscar(Long id) {
+        return departamentoRepository.findById(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Departamento " + id + " no encontrado"));
+    }
+
+    private DepartamentoDTO toDTO(Departamento d) {
+        long total = empleadoRepository.countByDepartamentoIdAndActivoTrue(d.getId());
+        return new DepartamentoDTO(d.getId(), d.getNombre(), total);
+    }
+}
+```
+
+#### `departamento/DepartamentoController.java`
+
+```java
+package com.empresa.rrhh.departamento;
+
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/departamentos")
+@RequiredArgsConstructor
+public class DepartamentoController {
+
+    private final DepartamentoService departamentoService;
+
+    @GetMapping
+    public List<DepartamentoDTO> listar() {
+        return departamentoService.listar();
+    }
+
+    @GetMapping("/{id}")
+    public DepartamentoDTO obtener(@PathVariable Long id) {
+        return departamentoService.obtener(id);
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public DepartamentoDTO crear(@Valid @RequestBody DepartamentoDTO dto) {
+        return departamentoService.crear(dto);
+    }
+
+    @PutMapping("/{id}")
+    public DepartamentoDTO actualizar(@PathVariable Long id, @Valid @RequestBody DepartamentoDTO dto) {
+        return departamentoService.actualizar(id, dto);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void eliminar(@PathVariable Long id) {
+        departamentoService.eliminar(id);
+    }
+}
+```
+
+> **Comprobado en caliente** (instancia de prueba, sin tocar el backend del desarrollador): listar con conteos correctos, crear, rechazar nombre duplicado (`400`), bloquear el borrado de un departamento con empleados (`400` con mensaje claro), permitir el borrado de uno vacío (`204`), `404` en id inexistente. Caso clave: un empleado dado de baja (`activo=false`) hace bajar `totalEmpleados` a 0 en el listado, pero **sigue bloqueando el borrado** del departamento — los dos conteos hacen su trabajo por separado.
+
 ---
 
 ## 7. Arrancar la aplicación
@@ -1486,7 +1668,7 @@ Orden recomendado. Cada fase deja algo funcionando antes de pasar a la siguiente
 - [x] Pantalla de detalle (`empleado-detail`) — ruta propia `/empleados/:id`, con `mat-card`; probada en el navegador
 
 ### Fase 3 — Departamentos
-- [ ] `DepartamentoService` y `DepartamentoController` (`GET`, `POST`, `PUT`, `DELETE`)
+- [x] `DepartamentoService` y `DepartamentoController` (`GET`, `POST`, `PUT`, `DELETE`) — probado en caliente
 - [ ] Listado de departamentos en Angular
 - [ ] Cargar el desplegable del formulario de empleados desde la API
 - [ ] Mostrar cuántos empleados tiene cada departamento
