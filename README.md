@@ -1399,7 +1399,7 @@ Orden recomendado. Cada fase deja algo funcionando antes de pasar a la siguiente
 ### Fase 2 — Empleados *(código en esta guía)*
 - [x] Entidades `Empleado` y `Departamento`
 - [x] CRUD completo en el backend
-- [x] Listado y formulario en Angular (con Angular Material)
+- [x] Listado y formulario en Angular (con Angular Material) — probado en el navegador: crear, editar y dar de baja funcionan de punta a punta
 - [ ] Pantalla de detalle (`empleado-detail`)
 
 ### Fase 3 — Departamentos
