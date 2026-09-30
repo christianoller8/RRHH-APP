@@ -54,6 +54,8 @@ Controller  →  Service  →  Repository  →  Base de datos
 | **Nombres de archivo según el estilo 2025**, con `.service` conservado en los servicios | Es la guía oficial vigente. Conservar `.service` evita que el servicio `Empleado` choque con el modelo `Empleado`. | Los tutoriales antiguos usan `.component.ts`; hay que traducir los nombres. |
 | **Frontend sin `zone.js` (`--zoneless`) y con SCSS** | Angular repinta según los `signal()`. SCSS es imprescindible para el tema de Material 3. | Alguna librería de terceros puede asumir `zone.js`. *(pendiente de verificar con Material)* |
 | **Angular Material 3 en el frontend**, con `provideAnimationsAsync()` | Componentes accesibles y un sistema de temas basado en variables CSS. `mat-sidenav` y otros componentes necesitan un proveedor de animaciones o fallan con error `NG05105`. | Aprender su sistema de theming además de Angular. |
+| **Pantallas de empleados con componentes de Material** (`mat-table`, `mat-form-field`, `mat-select`), no HTML plano | Consistente con el layout de la fase 1; se reutiliza en departamentos y vacaciones. | Más superficie de API de Material que aprender de una vez. |
+| **Java 25 en vez de 21** | Es la LTS más reciente (soporte hasta 2033), y así no hace falta migrar más adelante. | Ninguno relevante para este proyecto: se verificó que Boot 4.1.1 e Hibernate 7.4.5 compilan y arrancan igual que en 21. |
 | **Proyecto de aprendizaje** | Cada pieza de código se explica (qué es y por qué) antes de escribirla. | Más lento, pero es el objetivo. |
 
 > **Dependencias entre features:** `empleado` depende de `departamento` (un empleado pertenece a un departamento), pero `departamento` no debe depender de `empleado`. Si dos features se necesitan mutuamente, es señal de que el diseño está mal cortado.
@@ -1019,18 +1021,31 @@ export class EmpleadoService {
 
 #### `features/empleados/empleado-list/empleado-list.ts`
 
+Piezas de Material que usa esta pantalla: `MatTableModule` (la tabla declarativa), `MatButtonModule`/`MatIconModule` (los botones e iconos de acciones) y `MatProgressSpinnerModule` (el indicador de carga).
+
 ```typescript
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
+import { MatTableModule } from '@angular/material/table';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { EmpleadoService } from '../empleado.service';
 import { Empleado } from '../../../shared/models/empleado.model';
 
 @Component({
   selector: 'app-empleado-list',
-  imports: [RouterLink, DatePipe],
+  imports: [
+    RouterLink,
+    DatePipe,
+    MatTableModule,
+    MatButtonModule,
+    MatIconModule,
+    MatProgressSpinnerModule,
+  ],
   templateUrl: './empleado-list.html',
-  styleUrl: './empleado-list.scss'
+  styleUrl: './empleado-list.scss',
 })
 export class EmpleadoList implements OnInit {
   private empleadoService = inject(EmpleadoService);
@@ -1038,6 +1053,9 @@ export class EmpleadoList implements OnInit {
   empleados = signal<Empleado[]>([]);
   cargando = signal(true);
   error = signal<string | null>(null);
+
+  // columnas que pinta mat-table, en el orden en que se muestran
+  columnas = ['nombre', 'email', 'puesto', 'departamento', 'fechaAlta', 'acciones'];
 
   ngOnInit(): void {
     this.cargar();
@@ -1053,7 +1071,7 @@ export class EmpleadoList implements OnInit {
       error: () => {
         this.error.set('No se han podido cargar los empleados');
         this.cargando.set(false);
-      }
+      },
     });
   }
 
@@ -1069,71 +1087,113 @@ export class EmpleadoList implements OnInit {
 ```html
 <div class="cabecera">
   <h1>Empleados</h1>
-  <a routerLink="/empleados/nuevo" class="boton">+ Nuevo empleado</a>
+  <a mat-flat-button color="primary" routerLink="/empleados/nuevo">
+    <mat-icon>add</mat-icon>
+    Nuevo empleado
+  </a>
 </div>
 
 @if (cargando()) {
-  <p>Cargando...</p>
+  <mat-spinner />
 } @else if (error()) {
   <p class="error">{{ error() }}</p>
 } @else {
-  <table>
-    <thead>
-      <tr>
-        <th>Nombre</th>
-        <th>Email</th>
-        <th>Puesto</th>
-        <th>Departamento</th>
-        <th>Fecha de alta</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (emp of empleados(); track emp.id) {
-        <tr>
-          <td>{{ emp.nombre }} {{ emp.apellidos }}</td>
-          <td>{{ emp.email }}</td>
-          <td>{{ emp.puesto }}</td>
-          <td>{{ emp.departamentoNombre }}</td>
-          <td>{{ emp.fechaAlta | date: 'dd/MM/yyyy' }}</td>
-          <td>
-            <a [routerLink]="['/empleados', emp.id, 'editar']">Editar</a>
-            <button (click)="darDeBaja(emp)">Baja</button>
-          </td>
-        </tr>
-      } @empty {
-        <tr><td colspan="6">No hay empleados</td></tr>
-      }
-    </tbody>
+  <table mat-table [dataSource]="empleados()" class="tabla">
+    <!-- cada matColumnDef agrupa la cabecera y la celda de UNA columna -->
+    <ng-container matColumnDef="nombre">
+      <th mat-header-cell *matHeaderCellDef>Nombre</th>
+      <td mat-cell *matCellDef="let emp">{{ emp.nombre }} {{ emp.apellidos }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="email">
+      <th mat-header-cell *matHeaderCellDef>Email</th>
+      <td mat-cell *matCellDef="let emp">{{ emp.email }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="puesto">
+      <th mat-header-cell *matHeaderCellDef>Puesto</th>
+      <td mat-cell *matCellDef="let emp">{{ emp.puesto }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="departamento">
+      <th mat-header-cell *matHeaderCellDef>Departamento</th>
+      <td mat-cell *matCellDef="let emp">{{ emp.departamentoNombre }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="fechaAlta">
+      <th mat-header-cell *matHeaderCellDef>Fecha de alta</th>
+      <td mat-cell *matCellDef="let emp">{{ emp.fechaAlta | date: 'dd/MM/yyyy' }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="acciones">
+      <th mat-header-cell *matHeaderCellDef></th>
+      <td mat-cell *matCellDef="let emp">
+        <a mat-icon-button [routerLink]="['/empleados', emp.id, 'editar']" aria-label="Editar">
+          <mat-icon>edit</mat-icon>
+        </a>
+        <button mat-icon-button (click)="darDeBaja(emp)" aria-label="Dar de baja">
+          <mat-icon>person_remove</mat-icon>
+        </button>
+      </td>
+    </ng-container>
+
+    <!-- ensamblan las filas reales a partir de "columnas": orden y contenido -->
+    <tr mat-header-row *matHeaderRowDef="columnas"></tr>
+    <tr mat-row *matRowDef="let row; columns: columnas"></tr>
   </table>
+
+  @if (empleados().length === 0) {
+    <p>No hay empleados</p>
+  }
 }
 ```
 
 #### `features/empleados/empleado-list/empleado-list.scss`
 
 ```scss
-.cabecera { display: flex; justify-content: space-between; align-items: center; }
-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-th, td { padding: 0.6rem; border-bottom: 1px solid #ddd; text-align: left; }
-th { background: #f4f4f4; }
-.boton { background: #1976d2; color: white; padding: 0.5rem 1rem; border-radius: 4px; text-decoration: none; }
-.error { color: #c62828; }
-td button { margin-left: 0.5rem; }
+.cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.tabla {
+  width: 100%;
+}
+
+.error {
+  color: var(--mat-sys-error); // variable del tema, no un color fijo
+}
 ```
 
 #### `features/empleados/empleado-form/empleado-form.ts`
+
+Piezas de Material: `MatFormFieldModule` da el contenedor con la etiqueta flotante, `MatInputModule` conecta un `<input>` normal a ese contenedor (directiva `matInput`) y `MatSelectModule` es el equivalente a un `<select>`.
 
 ```typescript
 import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
+import { MatButtonModule } from '@angular/material/button';
 import { EmpleadoService } from '../empleado.service';
 import { Empleado } from '../../../shared/models/empleado.model';
 
 @Component({
   selector: 'app-empleado-form',
-  imports: [ReactiveFormsModule, RouterLink],
-  templateUrl: './empleado-form.html'
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    MatFormFieldModule,
+    MatInputModule,
+    MatSelectModule,
+    MatButtonModule,
+  ],
+  templateUrl: './empleado-form.html',
+  styleUrl: './empleado-form.scss',
 })
 export class EmpleadoForm implements OnInit {
   private fb = inject(FormBuilder);
@@ -1141,27 +1201,27 @@ export class EmpleadoForm implements OnInit {
   private router = inject(Router);
   private empleadoService = inject(EmpleadoService);
 
-  id: number | null = null;
+  id: number | null = null; // null = creando; con valor = editando ese id
 
   form = this.fb.nonNullable.group({
     nombre: ['', Validators.required],
     apellidos: ['', Validators.required],
     email: ['', [Validators.required, Validators.email]],
     puesto: [''],
-    departamentoId: [1]
+    departamentoId: [1],
   });
 
   ngOnInit(): void {
     const idParam = this.route.snapshot.paramMap.get('id');
     if (idParam) {
       this.id = Number(idParam);
-      this.empleadoService.obtener(this.id).subscribe(emp => this.form.patchValue(emp));
+      this.empleadoService.obtener(this.id).subscribe((emp) => this.form.patchValue(emp));
     }
   }
 
   guardar(): void {
     if (this.form.invalid) {
-      this.form.markAllAsTouched();
+      this.form.markAllAsTouched(); // fuerza a mostrar los errores de validación
       return;
     }
     const datos: Empleado = this.form.getRawValue();
@@ -1179,23 +1239,59 @@ export class EmpleadoForm implements OnInit {
 ```html
 <h1>{{ id ? 'Editar empleado' : 'Nuevo empleado' }}</h1>
 
-<form [formGroup]="form" (ngSubmit)="guardar()">
-  <label>Nombre <input formControlName="nombre" /></label>
-  <label>Apellidos <input formControlName="apellidos" /></label>
-  <label>Email <input formControlName="email" type="email" /></label>
-  <label>Puesto <input formControlName="puesto" /></label>
-  <label>
-    Departamento
-    <select formControlName="departamentoId">
-      <option [value]="1">Recursos Humanos</option>
-      <option [value]="2">Desarrollo</option>
-      <option [value]="3">Administración</option>
-    </select>
-  </label>
+<form [formGroup]="form" (ngSubmit)="guardar()" class="formulario">
+  <mat-form-field>
+    <mat-label>Nombre</mat-label>
+    <input matInput formControlName="nombre" />
+  </mat-form-field>
 
-  <button type="submit">Guardar</button>
-  <a routerLink="/empleados">Cancelar</a>
+  <mat-form-field>
+    <mat-label>Apellidos</mat-label>
+    <input matInput formControlName="apellidos" />
+  </mat-form-field>
+
+  <mat-form-field>
+    <mat-label>Email</mat-label>
+    <input matInput type="email" formControlName="email" />
+  </mat-form-field>
+
+  <mat-form-field>
+    <mat-label>Puesto</mat-label>
+    <input matInput formControlName="puesto" />
+  </mat-form-field>
+
+  <!-- fijo por ahora: en la fase 3 se carga desde /api/departamentos -->
+  <mat-form-field>
+    <mat-label>Departamento</mat-label>
+    <mat-select formControlName="departamentoId">
+      <mat-option [value]="1">Recursos Humanos</mat-option>
+      <mat-option [value]="2">Desarrollo</mat-option>
+      <mat-option [value]="3">Administración</mat-option>
+    </mat-select>
+  </mat-form-field>
+
+  <div class="acciones">
+    <button mat-flat-button color="primary" type="submit">Guardar</button>
+    <a mat-button routerLink="/empleados">Cancelar</a>
+  </div>
 </form>
+```
+
+`empleado-form.scss`:
+
+```scss
+.formulario {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 400px;
+}
+
+.acciones {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
 ```
 
 > Más adelante, las opciones del desplegable de departamentos se cargarán desde `/api/departamentos` en vez de estar fijas.
@@ -1301,9 +1397,9 @@ Orden recomendado. Cada fase deja algo funcionando antes de pasar a la siguiente
 - [x] Comprobar que ambos arrancan
 
 ### Fase 2 — Empleados *(código en esta guía)*
-- [ ] Entidades `Empleado` y `Departamento`
-- [ ] CRUD completo en el backend
-- [ ] Listado y formulario en Angular
+- [x] Entidades `Empleado` y `Departamento`
+- [x] CRUD completo en el backend
+- [x] Listado y formulario en Angular (con Angular Material)
 - [ ] Pantalla de detalle (`empleado-detail`)
 
 ### Fase 3 — Departamentos
@@ -1331,6 +1427,7 @@ Orden recomendado. Cada fase deja algo funcionando antes de pasar a la siguiente
 
 ### Fase 7 — Calidad y producción
 - [ ] Tests del backend (JUnit + Mockito) y del frontend
+- [ ] Revisar el presupuesto de bundle inicial en `angular.json` (superado por Material en `MainLayout` desde la fase 2; hoy es solo un warning, no un error)
 - [ ] Cambiar H2 por PostgreSQL o MySQL
 - [ ] Paginación y filtros en los listados
 - [ ] Dockerizar backend y frontend
